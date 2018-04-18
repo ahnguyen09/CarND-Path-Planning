@@ -1,3 +1,18 @@
+# Reflection
+
+## 1) Build Smooth Waypoints to Stay in Lane
+To build a smooth list of waypoints that adhere to velocity, acceleration and jerk limits, we start with using previous waypoints. A new path is calculated based on the last calculated wapoint in the previous waypoint que. To make sure the waypoints are within our constraints, we used cubic spline interpolation (tk_spline - http://kluge.in-chemnitz.de/opensource/spline/) based on 30m increments. We then made sure the waypoint we send to the simulator is spaced accordingly. The simulator uses the waypoint at a rate of 50Hz to update position. 
+
+## 2) Use Sensor Fusion Information To Control Target Speed
+We used the sensor fusion information to find the closest car ahead of us. The target speed is set to the same speed as the car ahead of us. We also calculate a simple constant time gap to space our car and the car ahead of us. 
+
+## 3) Determine If There Is a Better Lane
+Under the sensor fusion loop, we save the following information to help determine a better lane: slowest car in the lane, closest car ahead and behind. If the slowest car in another lane is faster than our current speed and there is 30m of open space ahead and behind then change lane.
+
+## Improvements
+Utilize JMT to build more complex path for smooth driving. Utilize cost functions based on trajectories of all call to model more complex behaviors.
+
+
 # CarND-Path-Planning-Project
 Self-Driving Car Engineer Nanodegree Program
    

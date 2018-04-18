@@ -17,7 +17,7 @@ using json = nlohmann::json;
 
 #define SCAN_TIME 0.02 // define scan time of 20ms
 #define MAX_SPEED 22.12848 // m/s -> limit max speed to 49.5 mph
-#define MAX_ACCEL 3.0 // set max accel to 5.0 m/s/s
+#define MAX_ACCEL 5.0 // set max accel to 5.0 m/s/s
 #define JERK 3.0 // set jerk rate to 5.0 m/s/s/s
 #define MPH_TO_MS 0.44704 // multipler to convert MPH to MS
 
@@ -305,9 +305,9 @@ int main() {
             }
 
             // Setting up target points in ahead in Frenet
-            vector<double> next_wp0 = getXY(car_s + 15, 2 + 4*lane, map_waypoints_s, map_waypoints_x, map_waypoints_y);
-            vector<double> next_wp1 = getXY(car_s + 30, 2 + 4*lane, map_waypoints_s, map_waypoints_x, map_waypoints_y);
-            vector<double> next_wp2 = getXY(car_s + 45, 2 + 4*lane, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+            vector<double> next_wp0 = getXY(car_s + 30, 2 + 4*lane, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+            vector<double> next_wp1 = getXY(car_s + 60, 2 + 4*lane, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+            vector<double> next_wp2 = getXY(car_s + 90, 2 + 4*lane, map_waypoints_s, map_waypoints_x, map_waypoints_y);
 
             ptsx.push_back(next_wp0[0]);
             ptsx.push_back(next_wp1[0]);
@@ -343,106 +343,175 @@ int main() {
 						// Set Target position to be 30m in front of us when there are no cars ahead
 						double target_x = 30.0;
 						double target_speed = 22.12848; //m/s - > set target speed to 49.5 mph
-						double const_time_gap = 15;
+						double const_time_gap = 35;
 
-						float closest_s_diff = 99999;
+						float closest_s_diff = 9999;
 						float closest_s_id = 0;
+
+						float slowest_car_left = 9999;
+						float slowest_car_right = 9999;
+
+						float closest_ahead_left = 9999;
+						float closest_behind_left = -9999;
+
+						float closest_ahead_right = 9999;
+						float closest_behind_right = -9999;
 
 						//sensor fusion to determine target position and speed
             for ( int i = 0; i < sensor_fusion.size(); i++ ) {
-							float s = sensor_fusion[i][5];
               float d = sensor_fusion[i][6];
 
-							if ((d > 4*lane && d < 4*(lane+1)) && abs(s-car_s) <= 300) { // same lane and within 300m
-								// Find car speed.
-								double vx = sensor_fusion[i][3];
-								double vy = sensor_fusion[i][4];
-								double check_speed = sqrt(vx*vx + vy*vy);
-								double check_car_s = sensor_fusion[i][5];
-								// Estimate car s position after executing previous trajectory.
-								check_car_s += ((double)prev_size*SCAN_TIME*check_speed);
+							// Find car speed.
+							double vx = sensor_fusion[i][3];
+							double vy = sensor_fusion[i][4];
+							double check_speed = sqrt(vx*vx + vy*vy);
+							double check_car_s = sensor_fusion[i][5];
+							// Estimate car s position after executing previous trajectory.
+							check_car_s += ((double)prev_size*SCAN_TIME*check_speed);
 
-							
+							double s_diff = check_car_s - car_s;
+
+							if ((d > 4*lane && d < 4*(lane+1)) && abs(s_diff) <= 300) { // same lane and within 300m					
 								car_speed = car_speed*MPH_TO_MS;
 								// change target x and target speed based on constant time gap and sensor fusion 
 
 								// save closes id of car that is ahead
-								if ((check_car_s-car_s) < closest_s_diff && check_car_s > car_s) {
-									closest_s_diff = check_car_s-car_s;
+								if ((s_diff) < closest_s_diff && check_car_s > car_s) {
+									closest_s_diff = s_diff;
 									closest_s_id = i;
 								}
 
-								if (check_car_s > car_s && (check_car_s-car_s) < 30 && i == closest_s_id) {
-									const_time_gap = 5 + car_speed*(3.5/22.352) - (check_speed-car_speed)*(0.5/22.352);
-									target_x = check_car_s - car_s - const_time_gap;
+								if (check_car_s > car_s && (s_diff) < 30 && i == closest_s_id) {
+									const_time_gap = 7.0 + car_speed*(4.0/22.352) - (check_speed-car_speed)*(0.5/22.352);
+									target_x = s_diff - const_time_gap;
+									if (target_x < const_time_gap) {
+										target_x = const_time_gap + 0.5;
+									}
 									
-									target_speed = check_speed - 0.2;
+									target_speed = check_speed;
 								}
-							}               
+							}
+
+							//update variables to help determine if a better lane exist
+							switch (lane) {
+								//if car is in lane o then we only need to check lane 1
+								case 0:
+									if ((d > 4 && d < 8) && abs(s_diff) <= 100) {
+										if ((s_diff) < closest_ahead_right && check_car_s>car_s) {
+											closest_ahead_right = s_diff;
+										}
+										if ((s_diff) > closest_behind_right && check_car_s<car_s) {
+											closest_behind_right = s_diff;
+										}
+
+										if (check_speed < slowest_car_right && check_car_s>car_s) {
+											slowest_car_right = check_speed;
+										}
+									}
+
+									break;
+
+								case 1:
+									if ((d > 0 && d < 4) && abs(s_diff) <= 100)  {
+										if ((s_diff) < closest_ahead_left && check_car_s>car_s) {
+											closest_ahead_left = s_diff;
+										}
+										if ((s_diff) > closest_behind_left && check_car_s<car_s) {
+											closest_behind_left = s_diff;
+										}
+
+										if (check_speed < slowest_car_left && check_car_s>car_s) {
+											slowest_car_left = check_speed;
+										}
+									}
+
+									if ((d > 8 && d < 12) && abs(s_diff) <= 100) { 
+										if ((s_diff) < closest_ahead_right && check_car_s>car_s) {
+											closest_ahead_right = s_diff;
+										}
+										if ((s_diff) > closest_behind_right && check_car_s<car_s) {
+											closest_behind_right = s_diff;
+										}
+
+										if (check_speed < slowest_car_right && check_car_s>car_s) {
+											slowest_car_right = check_speed;
+										}
+									}
+
+									break;
+								case 2:
+									if ((d > 4 && d < 8) && abs(s_diff) <= 100) { 
+										if ((s_diff) < closest_ahead_left && check_car_s>car_s) {
+											closest_ahead_left = s_diff;
+										}
+										if ((s_diff) > closest_behind_left && check_car_s<car_s) {
+											closest_behind_left = s_diff;
+										}
+
+										if (check_speed < slowest_car_left && check_car_s>car_s) {
+											slowest_car_left = check_speed;
+										}
+									}
+
+									break;
+							}			               
             }
+
+						
+						//determine if there is a better lane
+						//if const time gap < 30 that means we are close to another car ahead of us
+						if (const_time_gap < 30) {
+							switch (lane) {
+								case 0:
+									if (slowest_car_right > ref_vel && closest_ahead_right > 30 && closest_behind_right < -30) {
+										lane = 1;
+									}
+
+									break;
+								case 1:
+									if (slowest_car_left > ref_vel && closest_ahead_left > 30 && closest_behind_left< -30 && slowest_car_left > slowest_car_right) {
+										lane = 0;
+									}
+
+									if (slowest_car_right > ref_vel && closest_ahead_right > 30 && closest_behind_right < -30) {
+										lane = 2;
+									}
+
+									break;
+								case 2:
+									if (slowest_car_left > ref_vel && closest_ahead_left > 30 && closest_behind_left< -30) {
+										lane = 1;
+									}
+
+									break;
+							}
+						}
+						
 
             double target_y = s(target_x); //evaluate spine at target x
             double target_dist = sqrt(target_x*target_x + target_y*target_y);
 
             double x_add_on = 0;
 
+						double speed_delta = MAX_ACCEL*SCAN_TIME;
+
 						//increment x in short increments based on reference velocity
             for( int i = 1; i < 50 - prev_size; i++ ) {
-							//vf = vi + a*t + 0.5*j*t^2
-							//af = ai + j*t
 
-							ref_vel += ref_accel*SCAN_TIME + 0.5*JERK*SCAN_TIME*SCAN_TIME;
+							cout << closest_s_diff << "  " << const_time_gap << "\n\n";
+							
+							if (target_speed < ref_vel || (closest_s_diff < 1.5*const_time_gap && closest_s_diff < 30) ) {
+								ref_vel -= speed_delta;
+							} 
+							else {
+								ref_vel += speed_delta;
+							}
+
 							//limit velocity
 							if ( ref_vel > MAX_SPEED ) {
                 ref_vel = MAX_SPEED;
 							}
 
-							/*
-								target speed > ref_vel, target speed < ref_vel & target speed - ref_vel < 0.5*ref_accel^2/jerk
-									+jerk
-								target speed < ref_vel, target speed > ref_vel & target speed - ref_vel < 0.5*ref_accel^2/jerk
-									-jerk
-								== 
-									accel = 0;
-							*/ 
-
-							if (target_speed > ref_vel || 
-							    (target_speed < ref_vel && abs(target_speed-ref_vel) <= abs(0.5*ref_accel*ref_accel/JERK)) ) {
-								ref_accel += JERK*SCAN_TIME;
-							}
-							else if (target_speed < ref_vel || 
-											 (target_speed > ref_vel && abs(target_speed-ref_vel) <= abs(0.5*ref_accel*ref_accel/JERK)) || 
-											 (closest_s_diff < const_time_gap)  ) {
-								ref_accel -= JERK*SCAN_TIME;
-							}
-							/*
-							else {
-								ref_accel = 0;
-							}
-							*/
-
-							//limit accel
-							if ( ref_accel > MAX_ACCEL ) {
-                ref_accel = MAX_ACCEL;
-							}
-
-							/*
-              ref_vel += speed_diff;
-              if ( ref_vel > MAX_SPEED ) {
-                ref_vel = MAX_SPEED;
-              } else if ( ref_vel < MAX_ACC ) {
-                ref_vel = MAX_ACC;
-              }
-							*/
-
-							/*
-							cout << "target x " << target_x << endl;
-							
-							cout << "target speed " << target_speed << endl; 
-
-							cout << "ref speed " << ref_vel << endl;
-							cout << "ref accel " << ref_accel << endl;
-							*/
 
               double N = target_dist/(SCAN_TIME*ref_vel); //distance travel / distance travel at reference speed
               double x_point = x_add_on + target_x/N;
